@@ -31,3 +31,11 @@ type ListProductsQuery struct {
 	Page     int    `form:"page,default=1" binding:"min=1"`
 	PageSize int    `form:"page_size,default=20" binding:"min=1,max=100"`
 }
+
+type ProductListResponse struct {
+	Items      []Product `json:"items"`
+	Page       int       `json:"page"`
+	PageSize   int       `json:"page_size"`
+	Total      int64     `json:"total"`
+	TotalPages int64     `json:"total_pages"`
+}

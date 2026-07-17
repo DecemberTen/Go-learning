@@ -111,7 +111,15 @@ func (handler *ProductHandler) listProducts(c *gin.Context) {
 	// products := handler.store.List()
 	// c.JSON(200, products)
 
-	products, err := queryProducts(c.Request.Context(), handler.db)
+	var filter ListProductsQuery
+
+	err := c.ShouldBindQuery(&filter)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	products, err := queryProducts(c.Request.Context(), handler.db, filter)
 	if err != nil {
 		log.Printf("查询商品列表失败: %v", err)
 
@@ -121,7 +129,26 @@ func (handler *ProductHandler) listProducts(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, products)
+	total, err := countProducts(c.Request.Context(), handler.db, filter)
+	if err != nil {
+		log.Printf("查询商品总数失败: %v", err)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal Server Error",
+		})
+		return
+	}
+
+	totalPages := (total + int64(filter.PageSize) - 1) / int64(filter.PageSize)
+
+	response := ProductListResponse{
+		Items:      products,
+		Page:       filter.Page,
+		PageSize:   filter.PageSize,
+		Total:      total,
+		TotalPages: totalPages,
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (handler *ProductHandler) updateProduct(c *gin.Context) {

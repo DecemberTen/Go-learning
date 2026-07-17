@@ -15,6 +15,9 @@ var ErrProductUnavailable = errors.New(
 	"商品不存在、未上架或库存不足",
 )
 
+// openDatabase 创建并验证 MySQL 数据库连接池。
+// 参数：ctx 用于控制连接验证的超时与取消。
+// 返回值：连接成功时返回数据库连接池；创建或验证失败时返回错误。
 func openDatabase(ctx context.Context) (*sql.DB, error) {
 	config := mysql.Config{
 		User:                 "root",
@@ -31,6 +34,15 @@ func openDatabase(ctx context.Context) (*sql.DB, error) {
 		return nil, fmt.Errorf("创建数据库连接池失败: %w", err)
 	}
 
+	// 最多同时打开 20 条连接，避免请求过多时耗尽 MySQL 连接资源。
+	db.SetMaxOpenConns(20)
+	// 最多保留 5 条空闲连接，供后续请求直接复用。
+	db.SetMaxIdleConns(5)
+	// 每条连接最多复用 30 分钟，超过时间后由连接池逐步替换。
+	db.SetConnMaxLifetime(30 * time.Minute)
+	// 空闲连接连续 5 分钟未使用时允许连接池将其关闭。
+	db.SetConnMaxIdleTime(5 * time.Minute)
+
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -42,14 +54,21 @@ func openDatabase(ctx context.Context) (*sql.DB, error) {
 	return db, nil
 }
 
-func queryProducts(ctx context.Context, db *sql.DB) ([]Product, error) {
+func queryProducts(ctx context.Context, db *sql.DB, filter ListProductsQuery) ([]Product, error) {
 	query := `
 		SELECT id, name, price_cents, stock, status
 		FROM products
-		ORDER BY id ASC
+		where 1 = 1
 	`
+	args := []any{}
+	if filter.Status != "" {
+		query += ` and status = ?`
+		args = append(args, filter.Status)
+	}
+	query += ` order by id asc limit ? offset ?`
+	args = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
 
-	rows, err := db.QueryContext(ctx, query)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询产品失败: %w", err)
 	}
@@ -235,4 +254,29 @@ func sellProduct(
 	}
 
 	return nil
+}
+
+func countProducts(
+	ctx context.Context,
+	db *sql.DB,
+	filter ListProductsQuery,
+) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM products
+		WHERE 1 = 1
+	`
+
+	args := make([]any, 0)
+
+	if filter.Status != "" {
+		query += ` AND status = ?`
+		args = append(args, filter.Status)
+	}
+	var total int64
+	err := db.QueryRowContext(ctx, query, args...).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("查询产品总数失败: %w", err)
+	}
+	return total, nil
 }
