@@ -195,16 +195,66 @@ func main() {
 	router.NoMethod(methodNotAllowed)
 	router.NoRoute(notFound)
 
-	db, err := openDatabase(context.Background())
+	sqlDB, err := openDatabase(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer sqlDB.Close()
 
 	log.Println("MySQL连接成功")
 
+	gormDB, err := openGormDatabase(sqlDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_ = gormDB
+
+	// product, err := queryProductByIDWithGorm(
+	// 	context.Background(),
+	// 	gormDB,
+	// 	1,
+	// )
+	// if err != nil {
+	// 	if errors.Is(err, gorm.ErrRecordNotFound) {
+	// 		log.Println("商品不存在")
+	// 	} else {
+	// 		log.Println(err)
+	// 	}
+	// } else {
+	// 	log.Printf("查询成功: %+v", product)
+	// }
+
+	// products, err := queryProductsWithGorm(
+	// 	context.Background(),
+	// 	gormDB,
+	// )
+	// if err != nil {
+	// 	log.Println(err)
+	// } else {
+	// 	for _, product := range products {
+	// 		log.Printf("商品: %+v", product)
+	// 	}
+	// }
+
+	// product := Product{
+	// 	Name:       "GORM商品",
+	// 	PriceCents: 1999,
+	// 	Stock:      10,
+	// 	Status:     "active",
+	// }
+
+	// err = createProductWithGorm(
+	// 	context.Background(),
+	// 	gormDB,
+	// 	&product,
+	// )
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
 	store := newProductStore()
-	handler := newProductHandler(store, db)
+	handler := newProductHandler(store, sqlDB, gormDB)
 
 	handler.RegisterRoutes(router)
 

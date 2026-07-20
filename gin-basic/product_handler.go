@@ -8,17 +8,20 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type ProductHandler struct {
-	store *ProductStore
-	db    *sql.DB
+	store  *ProductStore
+	db     *sql.DB
+	gormDB *gorm.DB
 }
 
-func newProductHandler(store *ProductStore, db *sql.DB) *ProductHandler {
+func newProductHandler(store *ProductStore, db *sql.DB, gormDB *gorm.DB) *ProductHandler {
 	return &ProductHandler{
-		store: store,
-		db:    db,
+		store:  store,
+		db:     db,
+		gormDB: gormDB,
 	}
 }
 
@@ -63,8 +66,9 @@ func (handler *ProductHandler) getProduct(c *gin.Context) {
 	// 	return
 	// }
 
-	product, err := queryProductByID(c.Request.Context(), handler.db, id)
-	if errors.Is(err, sql.ErrNoRows) {
+	// product, err := queryProductByID(c.Request.Context(), handler.db, id)
+	product, err := queryProductByIDWithGorm(c.Request.Context(), handler.gormDB, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Product not found",
 		})
@@ -94,14 +98,31 @@ func (handler *ProductHandler) createdProduct(c *gin.Context) {
 	// createdProduct := handler.store.Create(input)
 	// c.JSON(201, createdProduct)
 
-	product, err := insertProduct(c.Request.Context(), handler.db, input)
+	// product, err := insertProduct(c.Request.Context(), handler.db, input)
+	// if err != nil {
+	// 	log.Printf("创建失败: %v", err)
+	// 	c.JSON(http.StatusInternalServerError, gin.H{
+	// 		"error": "Internal Server Error",
+	// 	})
+	// 	return
+	// }
+
+	product := Product{
+		Name:       input.Name,
+		PriceCents: input.PriceCents,
+		Stock:      input.Stock,
+		Status:     input.Status,
+	}
+
+	err = createProductWithGorm(c.Request.Context(), handler.gormDB, &product)
 	if err != nil {
-		log.Printf("创建失败: %v", err)
+		log.Printf("创建商品失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Internal Server Error",
 		})
 		return
 	}
+
 	c.JSON(http.StatusCreated, product)
 	// c.JSON(201, product)
 	// return
@@ -119,7 +140,8 @@ func (handler *ProductHandler) listProducts(c *gin.Context) {
 		return
 	}
 
-	products, err := queryProducts(c.Request.Context(), handler.db, filter)
+	// products, err := queryProducts(c.Request.Context(), handler.db, filter)
+	products, err := queryProductsWithGorm(c.Request.Context(), handler.gormDB, filter)
 	if err != nil {
 		log.Printf("查询商品列表失败: %v", err)
 
@@ -129,7 +151,8 @@ func (handler *ProductHandler) listProducts(c *gin.Context) {
 		return
 	}
 
-	total, err := countProducts(c.Request.Context(), handler.db, filter)
+	// total, err := countProducts(c.Request.Context(), handler.db, filter)
+	total, err := countProductsWithGorm(c.Request.Context(), handler.gormDB, filter)
 	if err != nil {
 		log.Printf("查询商品总数失败: %v", err)
 
