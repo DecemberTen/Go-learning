@@ -208,8 +208,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_ = gormDB
-
 	// product, err := queryProductByIDWithGorm(
 	// 	context.Background(),
 	// 	gormDB,
@@ -253,8 +251,9 @@ func main() {
 	// 	log.Fatal(err)
 	// }
 
-	store := newProductStore()
-	handler := newProductHandler(store, sqlDB, gormDB)
+	// store := newProductStore()
+	// handler := newProductHandler(store, sqlDB, gormDB)
+	handler := newProductHandler(gormDB)
 
 	handler.RegisterRoutes(router)
 

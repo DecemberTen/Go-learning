@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"errors"
 	"log"
 	"net/http"
@@ -12,15 +11,16 @@ import (
 )
 
 type ProductHandler struct {
-	store  *ProductStore
-	db     *sql.DB
+	// store  *ProductStore
+	// db     *sql.DB
 	gormDB *gorm.DB
 }
 
-func newProductHandler(store *ProductStore, db *sql.DB, gormDB *gorm.DB) *ProductHandler {
+// func newProductHandler(store *ProductStore, db *sql.DB, gormDB *gorm.DB) *ProductHandler {
+func newProductHandler(gormDB *gorm.DB) *ProductHandler {
 	return &ProductHandler{
-		store:  store,
-		db:     db,
+		// store:  store,
+		// db:     db,
 		gormDB: gormDB,
 	}
 }
@@ -43,6 +43,10 @@ func (handler *ProductHandler) RegisterRoutes(router *gin.Engine) {
 	productGroup.DELETE("/:id", handler.deleteProduct)
 
 	productGroup.POST("/:id/sell", handler.sellProductHandler)
+
+	productGroup.POST("/:id/images", handler.createProductImage)
+
+	productGroup.DELETE("/:id/images/:image_id", handler.deleteProductImage)
 
 	// router.GET("/profile", tokenMiddleware, profile)
 }
@@ -109,12 +113,21 @@ func (handler *ProductHandler) createdProduct(c *gin.Context) {
 
 	product := Product{
 		Name:       input.Name,
+		SKU:        input.SKU,
 		PriceCents: input.PriceCents,
 		Stock:      input.Stock,
 		Status:     input.Status,
 	}
 
 	err = createProductWithGorm(c.Request.Context(), handler.gormDB, &product)
+
+	if errors.Is(err, ErrDuplicateSKU) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Product SKU already exists",
+		})
+		return
+	}
+
 	if err != nil {
 		log.Printf("创建商品失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -194,9 +207,11 @@ func (handler *ProductHandler) updateProduct(c *gin.Context) {
 		return
 	}
 
-	product, err := updatedProduct(c.Request.Context(), handler.db, id, input)
+	// product, err := updatedProduct(c.Request.Context(), handler.db, id, input)
+	product, err := updateProductWithGorm(c.Request.Context(), handler.gormDB, id, input)
 
-	if errors.Is(err, sql.ErrNoRows) {
+	// if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Product not found",
 		})
@@ -233,9 +248,10 @@ func (handler *ProductHandler) deleteProduct(c *gin.Context) {
 		return
 	}
 
-	Err := delProductByID(c.Request.Context(), handler.db, id)
+	// Err := delProductByID(c.Request.Context(), handler.db, id)
+	Err := deleteProductWithGorm(c.Request.Context(), handler.gormDB, id)
 
-	if errors.Is(Err, sql.ErrNoRows) {
+	if errors.Is(Err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Product not found",
 		})
@@ -277,11 +293,88 @@ func (handler *ProductHandler) sellProductHandler(c *gin.Context) {
 		return
 	}
 
-	err = sellProduct(c.Request.Context(), handler.db, id, input.Quantity)
+	// err = sellProduct(c.Request.Context(), handler.db, id, input.Quantity)
+	err = sellProductWithGorm(c.Request.Context(), handler.gormDB, id, input.Quantity)
 
 	if errors.Is(err, ErrProductUnavailable) {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "Product not available",
+		})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal Server Error",
+		})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// createProductImage 为指定商品创建关联图片。
+// 参数：c 为当前 Gin 请求上下文，包含商品 ID 和图片请求体。
+// 返回值：无；创建结果写入 HTTP 响应。
+func (handler *ProductHandler) createProductImage(c *gin.Context) {
+	idText := c.Param("id")
+
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid product ID",
+		})
+		return
+	}
+
+	var input CreateProductImageRequest
+
+	err = c.ShouldBindJSON(&input)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	img, err := appendProductImageWithGorm(c.Request.Context(), handler.gormDB, id, input.URL)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Product not found",
+		})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Internal Server Error",
+		})
+		return
+	}
+	c.JSON(http.StatusCreated, img)
+}
+
+// deleteProductImage 删除指定商品下的一张图片。
+// 参数：c 为当前 Gin 请求上下文，包含商品 ID 和图片 ID。
+// 返回值：无；删除成功返回 204，失败时写入错误响应。
+func (handler *ProductHandler) deleteProductImage(c *gin.Context) {
+	productID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || productID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid product ID",
+		})
+		return
+	}
+
+	imageID, err := strconv.ParseInt(c.Param("image_id"), 10, 64)
+	if err != nil || imageID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid image ID",
+		})
+		return
+	}
+
+	err = deleteProductImageWithGorm(c.Request.Context(), handler.gormDB, productID, imageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Product image not found",
 		})
 		return
 	}
