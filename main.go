@@ -164,17 +164,17 @@ type User struct {
 	Name string `json:"name"`
 }
 
-func tokenMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		fmt.Println("tokenMiddleware")
-		token := request.Header.Get("Authorization")
-		if token != "Bearer abc123" {
-			http.Error(response, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(response, request)
-	})
-}
+// func tokenMiddleware(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+// 		fmt.Println("tokenMiddleware")
+// 		token := request.Header.Get("Authorization")
+// 		if token != "Bearer abc123" {
+// 			http.Error(response, "Invalid token", http.StatusUnauthorized)
+// 			return
+// 		}
+// 		next.ServeHTTP(response, request)
+// 	})
+// }
 
 func processTask(ctx context.Context) error {
 

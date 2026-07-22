@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -84,17 +85,17 @@ func requestTimer(c *gin.Context) {
 	)
 }
 
-func tokenMiddleware(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	if token != "Bearer abc123" {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid token",
-		})
-		return
-	}
-	c.Set("user_id", int64(123))
-	c.Next()
-}
+// func tokenMiddleware(c *gin.Context) {
+// 	token := c.GetHeader("Authorization")
+// 	if token != "Bearer abc123" {
+// 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+// 			"error": "Invalid token",
+// 		})
+// 		return
+// 	}
+// 	c.Set("user_id", int64(123))
+// 	c.Next()
+// }
 
 func profile(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -256,6 +257,14 @@ func main() {
 	handler := newProductHandler(gormDB)
 
 	handler.RegisterRoutes(router)
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET 未设置")
+	}
+
+	authHandler := newAuthHandler(gormDB, jwtSecret)
+	authHandler.RegisterRoutes(router)
 
 	// router.Use(requestTimer)
 

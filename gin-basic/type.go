@@ -69,3 +69,5 @@ type ProductImage struct {
 type CreateProductImageRequest struct {
 	URL string `json:"url" binding:"required,url"`
 }
+
+
