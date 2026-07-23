@@ -1,4 +1,4 @@
-package main
+package service
 
 import (
 	"errors"
@@ -11,22 +11,17 @@ import (
 
 const accessTokenDuration = time.Hour
 
-var ErrJWTSecretMissing = errors.New(
-	"JWT签名密钥不能为空",
-)
-
-var ErrInvalidAccessToken = errors.New(
-	"Access Token无效",
-)
+var ErrJWTSecretMissing = errors.New("JWT 签名密钥不能为空")
+var ErrInvalidAccessToken = errors.New("Access Token 无效")
 
 type AccessTokenClaims struct {
 	Role string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-// generateAccessToken 为登录用户生成 Access Token。
-// 参数：userID 为用户 ID，role 为用户角色，secret 为 JWT 签名密钥。
-// 返回值：生成成功时返回 JWT 字符串；密钥缺失或签名失败时返回错误。
+// generateAccessToken 为用户生成 Access Token。
+// 参数：userID 为用户 ID；role 为用户角色；secret 为 JWT 签名密钥。
+// 返回值：生成成功返回 JWT 字符串；密钥缺失或签名失败时返回错误。
 func generateAccessToken(
 	userID int64,
 	role string,
@@ -37,7 +32,6 @@ func generateAccessToken(
 	}
 
 	now := time.Now()
-
 	claims := AccessTokenClaims{
 		Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -50,27 +44,18 @@ func generateAccessToken(
 		},
 	}
 
-	token := jwt.NewWithClaims(
-		jwt.SigningMethodHS256,
-		claims,
-	)
-
-	tokenText, err := token.SignedString(
-		[]byte(secret),
-	)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenText, err := token.SignedString([]byte(secret))
 	if err != nil {
-		return "", fmt.Errorf(
-			"生成Access Token失败: %w",
-			err,
-		)
+		return "", fmt.Errorf("生成 Access Token 失败: %w", err)
 	}
 
 	return tokenText, nil
 }
 
 // parseAccessToken 解析并验证 Access Token。
-// 参数：tokenText 为 JWT 字符串，secret 为 JWT 签名密钥。
-// 返回值：验证成功时返回用户 ID 和角色；Token 无效时返回错误。
+// 参数：tokenText 为 JWT 字符串；secret 为 JWT 签名密钥。
+// 返回值：验证成功返回用户 ID 和角色；Token 无效时返回错误。
 func parseAccessToken(
 	tokenText string,
 	secret string,
@@ -80,7 +65,6 @@ func parseAccessToken(
 	}
 
 	claims := &AccessTokenClaims{}
-
 	token, err := jwt.ParseWithClaims(
 		tokenText,
 		claims,
@@ -94,26 +78,14 @@ func parseAccessToken(
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return 0, "", fmt.Errorf(
-			"%w: %v",
-			ErrInvalidAccessToken,
-			err,
-		)
+		return 0, "", fmt.Errorf("%w: %v", ErrInvalidAccessToken, err)
 	}
 	if !token.Valid {
 		return 0, "", ErrInvalidAccessToken
 	}
 
-	userID, err := strconv.ParseInt(
-		claims.Subject,
-		10,
-		64,
-	)
-	if err != nil || userID <= 0 {
-		return 0, "", ErrInvalidAccessToken
-	}
-
-	if claims.Role == "" {
+	userID, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil || userID <= 0 || claims.Role == "" {
 		return 0, "", ErrInvalidAccessToken
 	}
 
