@@ -12,18 +12,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"example.com/go-learning/internal/apperror"
 	"example.com/go-learning/internal/model"
 	"example.com/go-learning/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const refreshTokenDuration = 7 * 24 * time.Hour
-
-var ErrInvalidUsername = errors.New("用户名长度必须为 3 到 50 个字符")
-var ErrPasswordTooLong = errors.New("密码不能超过 72 字节")
-var ErrInvalidCredentials = errors.New("邮箱或密码错误")
-var ErrInvalidRefreshToken = errors.New("Refresh Token 无效")
-var ErrUserAlreadyExists = repository.ErrUserAlreadyExists
 
 type AuthService struct {
 	store     *repository.Store
@@ -112,15 +107,21 @@ func (service *AuthService) Register(
 
 	usernameLength := utf8.RuneCountInString(username)
 	if usernameLength < 3 || usernameLength > 50 {
-		return UserResult{}, ErrInvalidUsername
+		return UserResult{}, apperror.New(
+			apperror.CodeInvalidRequest,
+			"Invalid username or password",
+		)
 	}
 	if len(input.Password) > 72 {
-		return UserResult{}, ErrPasswordTooLong
+		return UserResult{}, apperror.New(
+			apperror.CodeInvalidRequest,
+			"Invalid username or password",
+		)
 	}
 
 	passwordHash, err := hashPassword(input.Password)
 	if err != nil {
-		return UserResult{}, err
+		return UserResult{}, internalError(err)
 	}
 
 	user := model.User{
@@ -129,8 +130,15 @@ func (service *AuthService) Register(
 		PasswordHash: passwordHash,
 		Role:         "user",
 	}
-	if err := service.store.CreateUser(ctx, &user); err != nil {
-		return UserResult{}, fmt.Errorf("创建用户失败: %w", err)
+	err = service.store.CreateUser(ctx, &user)
+	if errors.Is(err, repository.ErrUserAlreadyExists) {
+		return UserResult{}, apperror.New(
+			apperror.CodeUserAlreadyExists,
+			"User already exists",
+		)
+	}
+	if err != nil {
+		return UserResult{}, internalError(err)
 	}
 
 	return userResult(user), nil
@@ -147,18 +155,18 @@ func (service *AuthService) Login(
 
 	user, err := service.store.FindUserByEmail(ctx, email)
 	if errors.Is(err, repository.ErrNotFound) {
-		return LoginResult{}, ErrInvalidCredentials
+		return LoginResult{}, invalidCredentialsError()
 	}
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, internalError(err)
 	}
 
 	err = comparePassword(input.Password, user.PasswordHash)
 	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-		return LoginResult{}, ErrInvalidCredentials
+		return LoginResult{}, invalidCredentialsError()
 	}
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("验证密码失败: %w", err)
+		return LoginResult{}, internalError(err)
 	}
 
 	accessToken, err := generateAccessToken(
@@ -167,7 +175,7 @@ func (service *AuthService) Login(
 		service.jwtSecret,
 	)
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, internalError(err)
 	}
 
 	refreshToken, err := service.issueRefreshToken(
@@ -176,7 +184,7 @@ func (service *AuthService) Login(
 		user.ID,
 	)
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, internalError(err)
 	}
 
 	return LoginResult{
@@ -195,7 +203,7 @@ func (service *AuthService) RefreshAccessToken(
 	tokenText string,
 ) (string, error) {
 	if strings.TrimSpace(tokenText) == "" {
-		return "", ErrInvalidRefreshToken
+		return "", invalidRefreshTokenError()
 	}
 
 	refreshToken, err := service.store.FindRefreshTokenByHash(
@@ -203,25 +211,34 @@ func (service *AuthService) RefreshAccessToken(
 		hashRefreshToken(tokenText),
 	)
 	if errors.Is(err, repository.ErrNotFound) {
-		return "", ErrInvalidRefreshToken
+		return "", invalidRefreshTokenError()
 	}
 	if err != nil {
-		return "", err
+		return "", internalError(err)
 	}
 	if refreshToken.RevokedAt != nil ||
 		!time.Now().Before(refreshToken.ExpiresAt) {
-		return "", ErrInvalidRefreshToken
+		return "", invalidRefreshTokenError()
 	}
 
 	user, err := service.store.FindUserByID(ctx, refreshToken.UserID)
 	if errors.Is(err, repository.ErrNotFound) {
-		return "", ErrInvalidRefreshToken
+		return "", invalidRefreshTokenError()
 	}
 	if err != nil {
-		return "", err
+		return "", internalError(err)
 	}
 
-	return generateAccessToken(user.ID, user.Role, service.jwtSecret)
+	accessToken, err := generateAccessToken(
+		user.ID,
+		user.Role,
+		service.jwtSecret,
+	)
+	if err != nil {
+		return "", internalError(err)
+	}
+
+	return accessToken, nil
 }
 
 // RotateRefreshToken 验证并轮换 Refresh Token，同时签发新的 Access Token。
@@ -232,7 +249,7 @@ func (service *AuthService) RotateRefreshToken(
 	tokenText string,
 ) (RefreshResult, error) {
 	if strings.TrimSpace(tokenText) == "" {
-		return RefreshResult{}, ErrInvalidRefreshToken
+		return RefreshResult{}, invalidRefreshTokenError()
 	}
 
 	tokenHash := hashRefreshToken(tokenText)
@@ -247,7 +264,7 @@ func (service *AuthService) RotateRefreshToken(
 					tokenHash,
 				)
 			if errors.Is(err, repository.ErrNotFound) {
-				return ErrInvalidRefreshToken
+				return invalidRefreshTokenError()
 			}
 			if err != nil {
 				return err
@@ -256,7 +273,7 @@ func (service *AuthService) RotateRefreshToken(
 			now := time.Now()
 			if currentToken.RevokedAt != nil ||
 				!now.Before(currentToken.ExpiresAt) {
-				return ErrInvalidRefreshToken
+				return invalidRefreshTokenError()
 			}
 
 			user, err := transactionStore.FindUserByID(
@@ -264,7 +281,7 @@ func (service *AuthService) RotateRefreshToken(
 				currentToken.UserID,
 			)
 			if errors.Is(err, repository.ErrNotFound) {
-				return ErrInvalidRefreshToken
+				return invalidRefreshTokenError()
 			}
 			if err != nil {
 				return err
@@ -285,7 +302,7 @@ func (service *AuthService) RotateRefreshToken(
 				now,
 			)
 			if errors.Is(err, repository.ErrRefreshTokenNotActive) {
-				return ErrInvalidRefreshToken
+				return invalidRefreshTokenError()
 			}
 			if err != nil {
 				return err
@@ -309,7 +326,10 @@ func (service *AuthService) RotateRefreshToken(
 		},
 	)
 	if err != nil {
-		return RefreshResult{}, err
+		if appError, exists := apperror.As(err); exists {
+			return RefreshResult{}, appError
+		}
+		return RefreshResult{}, internalError(err)
 	}
 
 	return response, nil
@@ -326,11 +346,16 @@ func (service *AuthService) Logout(
 		return nil
 	}
 
-	return service.store.RevokeRefreshTokenByHash(
+	err := service.store.RevokeRefreshTokenByHash(
 		ctx,
 		hashRefreshToken(tokenText),
 		time.Now(),
 	)
+	if err != nil {
+		return internalError(err)
+	}
+
+	return nil
 }
 
 // ParseAccessToken 解析并验证 Access Token。
@@ -339,7 +364,21 @@ func (service *AuthService) Logout(
 func (service *AuthService) ParseAccessToken(
 	tokenText string,
 ) (int64, string, error) {
-	return parseAccessToken(tokenText, service.jwtSecret)
+	userID, role, err := parseAccessToken(
+		tokenText,
+		service.jwtSecret,
+	)
+	if errors.Is(err, ErrJWTSecretMissing) {
+		return 0, "", internalError(err)
+	}
+	if err != nil {
+		return 0, "", apperror.New(
+			apperror.CodeInvalidAccessToken,
+			"Access token is invalid",
+		)
+	}
+
+	return userID, role, nil
 }
 
 // FindUserByID 查询当前最新用户信息。
@@ -349,7 +388,38 @@ func (service *AuthService) FindUserByID(
 	ctx context.Context,
 	id int64,
 ) (*model.User, error) {
-	return service.store.FindUserByID(ctx, id)
+	user, err := service.store.FindUserByID(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, apperror.New(
+			apperror.CodeInvalidAccessToken,
+			"Current user no longer exists",
+		)
+	}
+	if err != nil {
+		return nil, internalError(err)
+	}
+
+	return user, nil
+}
+
+// invalidCredentialsError 创建统一登录凭证错误。
+// 参数：无。
+// 返回值：返回不暴露邮箱或密码哪一项错误的认证 AppError。
+func invalidCredentialsError() error {
+	return apperror.New(
+		apperror.CodeInvalidCredentials,
+		"Invalid email or password",
+	)
+}
+
+// invalidRefreshTokenError 创建统一 Refresh Token 错误。
+// 参数：无。
+// 返回值：返回不暴露令牌失效具体原因的认证 AppError。
+func invalidRefreshTokenError() error {
+	return apperror.New(
+		apperror.CodeInvalidRefreshToken,
+		"Refresh token is invalid",
+	)
 }
 
 // generateRefreshToken 生成安全随机 Refresh Token 及其 SHA-256 哈希。

@@ -1,10 +1,9 @@
 package handler
 
 import (
-	"errors"
-	"log"
 	"net/http"
 
+	"example.com/go-learning/internal/apperror"
 	"example.com/go-learning/internal/response"
 	"example.com/go-learning/internal/service"
 	"github.com/gin-gonic/gin"
@@ -76,33 +75,8 @@ func (handler *AuthHandler) register(context *gin.Context) {
 			Password: input.Password,
 		},
 	)
-	if errors.Is(err, service.ErrInvalidUsername) ||
-		errors.Is(err, service.ErrPasswordTooLong) {
-		response.RespondError(
-			context,
-			http.StatusBadRequest,
-			response.ErrorCodeInvalidRequest,
-			"Invalid username or password",
-		)
-		return
-	}
-	if errors.Is(err, service.ErrUserAlreadyExists) {
-		response.RespondError(
-			context,
-			http.StatusConflict,
-			response.ErrorCodeUserAlreadyExists,
-			"User already exists",
-		)
-		return
-	}
 	if err != nil {
-		log.Printf("注册用户失败: %v", err)
-		response.RespondError(
-			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
-		)
+		response.HandleError(context, err)
 		return
 	}
 
@@ -131,23 +105,8 @@ func (handler *AuthHandler) login(context *gin.Context) {
 			Password: input.Password,
 		},
 	)
-	if errors.Is(err, service.ErrInvalidCredentials) {
-		response.RespondError(
-			context,
-			http.StatusUnauthorized,
-			response.ErrorCodeInvalidCredentials,
-			"Invalid email or password",
-		)
-		return
-	}
 	if err != nil {
-		log.Printf("登录失败: %v", err)
-		response.RespondError(
-			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
-		)
+		response.HandleError(context, err)
 		return
 	}
 
@@ -178,13 +137,7 @@ func (handler *AuthHandler) logout(context *gin.Context) {
 		context.Request.Context(),
 		input.RefreshToken,
 	); err != nil {
-		log.Printf("退出登录失败: %v", err)
-		response.RespondError(
-			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
-		)
+		response.HandleError(context, err)
 		return
 	}
 
@@ -210,23 +163,8 @@ func (handler *AuthHandler) refresh(context *gin.Context) {
 		context.Request.Context(),
 		input.RefreshToken,
 	)
-	if errors.Is(err, service.ErrInvalidRefreshToken) {
-		response.RespondError(
-			context,
-			http.StatusUnauthorized,
-			response.ErrorCodeInvalidRefreshToken,
-			"Refresh token is invalid",
-		)
-		return
-	}
 	if err != nil {
-		log.Printf("刷新令牌失败: %v", err)
-		response.RespondError(
-			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
-		)
+		response.HandleError(context, err)
 		return
 	}
 
@@ -244,11 +182,12 @@ func (handler *AuthHandler) profile(context *gin.Context) {
 	userIDValue, exists := context.Get("user_id")
 	userID, valid := userIDValue.(int64)
 	if !exists || !valid {
-		response.RespondError(
+		response.HandleError(
 			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
+			apperror.New(
+				apperror.CodeInternal,
+				"Internal server error",
+			),
 		)
 		return
 	}
@@ -257,23 +196,8 @@ func (handler *AuthHandler) profile(context *gin.Context) {
 		context.Request.Context(),
 		userID,
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		response.RespondError(
-			context,
-			http.StatusUnauthorized,
-			response.ErrorCodeInvalidAccessToken,
-			"Current user no longer exists",
-		)
-		return
-	}
 	if err != nil {
-		log.Printf("查询当前用户失败: %v", err)
-		response.RespondError(
-			context,
-			http.StatusInternalServerError,
-			response.ErrorCodeInternal,
-			"Internal server error",
-		)
+		response.HandleError(context, err)
 		return
 	}
 

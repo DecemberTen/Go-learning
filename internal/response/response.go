@@ -1,22 +1,27 @@
 package response
 
-import "github.com/gin-gonic/gin"
+import (
+	"example.com/go-learning/internal/apperror"
+	"github.com/gin-gonic/gin"
+)
 
 type ErrorResponse struct {
-	Code    ErrorCode `json:"code"`
-	Message string    `json:"message"`
+	Code    apperror.Code `json:"code"`
+	Message string        `json:"message"`
 }
 
-type ErrorCode string
+type ErrorCode = apperror.Code
 
 const (
-	ErrorCodeInvalidRequest      ErrorCode = "INVALID_REQUEST"
-	ErrorCodeInvalidCredentials  ErrorCode = "INVALID_CREDENTIALS"
-	ErrorCodeUserAlreadyExists   ErrorCode = "USER_ALREADY_EXISTS"
-	ErrorCodeInvalidAccessToken  ErrorCode = "INVALID_ACCESS_TOKEN"
-	ErrorCodeInvalidRefreshToken ErrorCode = "INVALID_REFRESH_TOKEN"
-	ErrorCodeForbidden           ErrorCode = "FORBIDDEN"
-	ErrorCodeInternal            ErrorCode = "INTERNAL_ERROR"
+	ErrorCodeInvalidRequest      = apperror.CodeInvalidRequest
+	ErrorCodeNotFound            = apperror.CodeNotFound
+	ErrorCodeConflict            = apperror.CodeConflict
+	ErrorCodeInvalidCredentials  = apperror.CodeInvalidCredentials
+	ErrorCodeUserAlreadyExists   = apperror.CodeUserAlreadyExists
+	ErrorCodeInvalidAccessToken  = apperror.CodeInvalidAccessToken
+	ErrorCodeInvalidRefreshToken = apperror.CodeInvalidRefreshToken
+	ErrorCodeForbidden           = apperror.CodeForbidden
+	ErrorCodeInternal            = apperror.CodeInternal
 )
 
 // RespondError 返回统一格式的 HTTP 错误响应。

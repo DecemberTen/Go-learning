@@ -2,14 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 
+	"example.com/go-learning/internal/apperror"
 	"example.com/go-learning/internal/model"
 	"example.com/go-learning/internal/repository"
 )
-
-var ErrDuplicateSKU = repository.ErrDuplicateSKU
-var ErrProductUnavailable = repository.ErrProductUnavailable
-var ErrNotFound = repository.ErrNotFound
 
 type ProductService struct {
 	store *repository.Store
@@ -58,7 +56,18 @@ func (service *ProductService) GetProduct(
 	ctx context.Context,
 	id int64,
 ) (model.Product, error) {
-	return service.store.FindProductByID(ctx, id)
+	product, err := service.store.FindProductByID(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return model.Product{}, apperror.New(
+			apperror.CodeNotFound,
+			"Product not found",
+		)
+	}
+	if err != nil {
+		return model.Product{}, internalError(err)
+	}
+
+	return product, nil
 }
 
 // CreateProduct 根据输入创建商品。
@@ -76,8 +85,15 @@ func (service *ProductService) CreateProduct(
 		Status:     input.Status,
 	}
 
-	if err := service.store.CreateProduct(ctx, &product); err != nil {
-		return model.Product{}, err
+	err := service.store.CreateProduct(ctx, &product)
+	if errors.Is(err, repository.ErrDuplicateSKU) {
+		return model.Product{}, apperror.New(
+			apperror.CodeConflict,
+			"Product SKU already exists",
+		)
+	}
+	if err != nil {
+		return model.Product{}, internalError(err)
 	}
 
 	return product, nil
@@ -97,12 +113,12 @@ func (service *ProductService) ListProducts(
 		filter.PageSize,
 	)
 	if err != nil {
-		return ProductList{}, err
+		return ProductList{}, internalError(err)
 	}
 
 	total, err := service.store.CountProducts(ctx, filter.Status)
 	if err != nil {
-		return ProductList{}, err
+		return ProductList{}, internalError(err)
 	}
 
 	totalPages := (total + int64(filter.PageSize) - 1) /
@@ -125,7 +141,7 @@ func (service *ProductService) UpdateProduct(
 	id int64,
 	input UpdateProductInput,
 ) (model.Product, error) {
-	return service.store.UpdateProduct(
+	product, err := service.store.UpdateProduct(
 		ctx,
 		id,
 		input.Name,
@@ -133,6 +149,17 @@ func (service *ProductService) UpdateProduct(
 		input.Stock,
 		input.Status,
 	)
+	if errors.Is(err, repository.ErrNotFound) {
+		return model.Product{}, apperror.New(
+			apperror.CodeNotFound,
+			"Product not found",
+		)
+	}
+	if err != nil {
+		return model.Product{}, internalError(err)
+	}
+
+	return product, nil
 }
 
 // DeleteProduct 软删除指定商品。
@@ -142,7 +169,18 @@ func (service *ProductService) DeleteProduct(
 	ctx context.Context,
 	id int64,
 ) error {
-	return service.store.DeleteProduct(ctx, id)
+	err := service.store.DeleteProduct(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return apperror.New(
+			apperror.CodeNotFound,
+			"Product not found",
+		)
+	}
+	if err != nil {
+		return internalError(err)
+	}
+
+	return nil
 }
 
 // SellProduct 扣减指定商品库存。
@@ -153,7 +191,18 @@ func (service *ProductService) SellProduct(
 	id int64,
 	quantity int,
 ) error {
-	return service.store.SellProduct(ctx, id, quantity)
+	err := service.store.SellProduct(ctx, id, quantity)
+	if errors.Is(err, repository.ErrProductUnavailable) {
+		return apperror.New(
+			apperror.CodeConflict,
+			"Product not available",
+		)
+	}
+	if err != nil {
+		return internalError(err)
+	}
+
+	return nil
 }
 
 // AddProductImage 为指定商品添加图片。
@@ -164,7 +213,22 @@ func (service *ProductService) AddProductImage(
 	productID int64,
 	url string,
 ) (model.ProductImage, error) {
-	return service.store.AppendProductImage(ctx, productID, url)
+	image, err := service.store.AppendProductImage(
+		ctx,
+		productID,
+		url,
+	)
+	if errors.Is(err, repository.ErrNotFound) {
+		return model.ProductImage{}, apperror.New(
+			apperror.CodeNotFound,
+			"Product not found",
+		)
+	}
+	if err != nil {
+		return model.ProductImage{}, internalError(err)
+	}
+
+	return image, nil
 }
 
 // DeleteProductImage 删除指定商品图片。
@@ -175,7 +239,22 @@ func (service *ProductService) DeleteProductImage(
 	productID int64,
 	imageID int64,
 ) error {
-	return service.store.DeleteProductImage(ctx, productID, imageID)
+	err := service.store.DeleteProductImage(
+		ctx,
+		productID,
+		imageID,
+	)
+	if errors.Is(err, repository.ErrNotFound) {
+		return apperror.New(
+			apperror.CodeNotFound,
+			"Product image not found",
+		)
+	}
+	if err != nil {
+		return internalError(err)
+	}
+
+	return nil
 }
 
 // DisableProducts 批量禁用商品。
@@ -185,5 +264,10 @@ func (service *ProductService) DisableProducts(
 	ctx context.Context,
 	ids []int64,
 ) (int64, error) {
-	return service.store.DisableProducts(ctx, ids)
+	affectedRows, err := service.store.DisableProducts(ctx, ids)
+	if err != nil {
+		return 0, internalError(err)
+	}
+
+	return affectedRows, nil
 }

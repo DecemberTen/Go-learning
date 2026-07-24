@@ -1,10 +1,9 @@
 package middleware
 
 import (
-	"errors"
-	"net/http"
 	"strings"
 
+	"example.com/go-learning/internal/apperror"
 	"example.com/go-learning/internal/response"
 	"example.com/go-learning/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,23 +19,19 @@ func NewAuth(authService *service.AuthService) gin.HandlerFunc {
 		)
 		if len(parts) != 2 ||
 			!strings.EqualFold(parts[0], "Bearer") {
-			response.AbortError(
+			response.AbortAppError(
 				context,
-				http.StatusUnauthorized,
-				response.ErrorCodeInvalidAccessToken,
-				"Access token is invalid",
+				apperror.New(
+					apperror.CodeInvalidAccessToken,
+					"Access token is invalid",
+				),
 			)
 			return
 		}
 
 		userID, role, err := authService.ParseAccessToken(parts[1])
 		if err != nil {
-			response.AbortError(
-				context,
-				http.StatusUnauthorized,
-				response.ErrorCodeInvalidAccessToken,
-				"Access token is invalid",
-			)
+			response.AbortAppError(context, err)
 			return
 		}
 
@@ -54,11 +49,12 @@ func NewAdmin(authService *service.AuthService) gin.HandlerFunc {
 		userIDValue, exists := context.Get("user_id")
 		userID, valid := userIDValue.(int64)
 		if !exists || !valid {
-			response.AbortError(
+			response.AbortAppError(
 				context,
-				http.StatusUnauthorized,
-				response.ErrorCodeInvalidAccessToken,
-				"Access token is invalid",
+				apperror.New(
+					apperror.CodeInvalidAccessToken,
+					"Access token is invalid",
+				),
 			)
 			return
 		}
@@ -67,30 +63,17 @@ func NewAdmin(authService *service.AuthService) gin.HandlerFunc {
 			context.Request.Context(),
 			userID,
 		)
-		if errors.Is(err, service.ErrNotFound) {
-			response.AbortError(
-				context,
-				http.StatusUnauthorized,
-				response.ErrorCodeInvalidAccessToken,
-				"Current user no longer exists",
-			)
-			return
-		}
 		if err != nil {
-			response.AbortError(
-				context,
-				http.StatusInternalServerError,
-				response.ErrorCodeInternal,
-				"Internal server error",
-			)
+			response.AbortAppError(context, err)
 			return
 		}
 		if user.Role != "admin" {
-			response.AbortError(
+			response.AbortAppError(
 				context,
-				http.StatusForbidden,
-				response.ErrorCodeForbidden,
-				"Administrator permission is required",
+				apperror.New(
+					apperror.CodeForbidden,
+					"Administrator permission is required",
+				),
 			)
 			return
 		}

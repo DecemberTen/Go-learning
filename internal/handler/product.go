@@ -2,10 +2,10 @@ package handler
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 
+	"example.com/go-learning/internal/response"
 	"example.com/go-learning/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -69,9 +69,12 @@ func parsePositiveID(value string) (int64, error) {
 func (handler *ProductHandler) getProduct(context *gin.Context) {
 	id, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
@@ -79,17 +82,8 @@ func (handler *ProductHandler) getProduct(context *gin.Context) {
 		context.Request.Context(),
 		id,
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		context.JSON(http.StatusNotFound, gin.H{
-			"error": "Product not found",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("查询商品失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -102,9 +96,12 @@ func (handler *ProductHandler) getProduct(context *gin.Context) {
 func (handler *ProductHandler) createProduct(context *gin.Context) {
 	var input CreateProductRequest
 	if err := context.ShouldBindJSON(&input); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid request body",
+		)
 		return
 	}
 
@@ -118,17 +115,8 @@ func (handler *ProductHandler) createProduct(context *gin.Context) {
 			Status:     input.Status,
 		},
 	)
-	if errors.Is(err, service.ErrDuplicateSKU) {
-		context.JSON(http.StatusConflict, gin.H{
-			"error": "Product SKU already exists",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("创建商品失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -141,9 +129,12 @@ func (handler *ProductHandler) createProduct(context *gin.Context) {
 func (handler *ProductHandler) listProducts(context *gin.Context) {
 	var query ListProductsQuery
 	if err := context.ShouldBindQuery(&query); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid query parameters",
+		)
 		return
 	}
 
@@ -156,10 +147,7 @@ func (handler *ProductHandler) listProducts(context *gin.Context) {
 		},
 	)
 	if err != nil {
-		log.Printf("查询商品列表失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -178,17 +166,23 @@ func (handler *ProductHandler) listProducts(context *gin.Context) {
 func (handler *ProductHandler) updateProduct(context *gin.Context) {
 	id, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
 	var input UpdateProductRequest
 	if err := context.ShouldBindJSON(&input); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid request body",
+		)
 		return
 	}
 
@@ -202,17 +196,8 @@ func (handler *ProductHandler) updateProduct(context *gin.Context) {
 			Status:     input.Status,
 		},
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		context.JSON(http.StatusNotFound, gin.H{
-			"error": "Product not found",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("更新商品失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -225,9 +210,12 @@ func (handler *ProductHandler) updateProduct(context *gin.Context) {
 func (handler *ProductHandler) deleteProduct(context *gin.Context) {
 	id, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
@@ -235,17 +223,8 @@ func (handler *ProductHandler) deleteProduct(context *gin.Context) {
 		context.Request.Context(),
 		id,
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		context.JSON(http.StatusNotFound, gin.H{
-			"error": "Product not found",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("删除商品失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -258,17 +237,23 @@ func (handler *ProductHandler) deleteProduct(context *gin.Context) {
 func (handler *ProductHandler) sellProduct(context *gin.Context) {
 	id, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
 	var input SellProductRequest
 	if err := context.ShouldBindJSON(&input); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid request body",
+		)
 		return
 	}
 
@@ -277,17 +262,8 @@ func (handler *ProductHandler) sellProduct(context *gin.Context) {
 		id,
 		input.Quantity,
 	)
-	if errors.Is(err, service.ErrProductUnavailable) {
-		context.JSON(http.StatusConflict, gin.H{
-			"error": "Product not available",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("销售商品失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -302,17 +278,23 @@ func (handler *ProductHandler) createProductImage(
 ) {
 	productID, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
 	var input CreateProductImageRequest
 	if err := context.ShouldBindJSON(&input); err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid request body",
+		)
 		return
 	}
 
@@ -321,17 +303,8 @@ func (handler *ProductHandler) createProductImage(
 		productID,
 		input.URL,
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		context.JSON(http.StatusNotFound, gin.H{
-			"error": "Product not found",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("创建商品图片失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
@@ -346,17 +319,23 @@ func (handler *ProductHandler) deleteProductImage(
 ) {
 	productID, err := parsePositiveID(context.Param("id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid product ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid product ID",
+		)
 		return
 	}
 
 	imageID, err := parsePositiveID(context.Param("image_id"))
 	if err != nil {
-		context.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid image ID",
-		})
+		response.RespondError(
+			context,
+			http.StatusBadRequest,
+			response.ErrorCodeInvalidRequest,
+			"Invalid image ID",
+		)
 		return
 	}
 
@@ -365,17 +344,8 @@ func (handler *ProductHandler) deleteProductImage(
 		productID,
 		imageID,
 	)
-	if errors.Is(err, service.ErrNotFound) {
-		context.JSON(http.StatusNotFound, gin.H{
-			"error": "Product image not found",
-		})
-		return
-	}
 	if err != nil {
-		log.Printf("删除商品图片失败: %v", err)
-		context.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Internal Server Error",
-		})
+		response.HandleError(context, err)
 		return
 	}
 
